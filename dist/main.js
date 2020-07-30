@@ -961,7 +961,7 @@ class Tile {
     // }
     activateIfDiceValueMatchesElseDeactivate(value) {
         util_1.assertInt(value);
-        if (value == this.diceValue && !this.isDisabledByRobber) { // no profits if the robber is around
+        if (value == this.diceValue && !this.isDisabledByRobber && this.landType != Biome_1.Desert) { // no profits if the robber is around
             this.active = true;
         }
         else {
@@ -1654,7 +1654,7 @@ class Game extends React.Component {
                 (this.state.gameStarted) ? null : React.createElement("button", { className: "button", onClick: () => { this.props.conn.send({ 'debug': 'startGame' }); } }, "Start Game"),
                 (this.state.currentTurn && this.state.currentTurn.currentPlayer.getName() == this.props.conn.getName()) ? React.createElement("button", { className: "button", onClick: () => { this.props.conn.send({ 'type': 'action', 'content': 'nextTurn' }); } }, "End Turn") : null,
                 (this.state.currentTurn && this.state.currentTurn.dieValue) ? React.createElement("p", null, `Die Roll: ${this.state.currentTurn.dieValue}`) : null),
-            React.createElement(inventoryDisplay_1.InventoryDisplay, { inv: this.state.inventory, onClickPurchasedLine: this.onClickPurchasedLine.bind(this), onClickPurchasedPoint: this.onClickPurchasedPoint.bind(this) }),
+            React.createElement(inventoryDisplay_1.InventoryDisplay, { inv: this.state.inventory, onClickPurchasedLine: this.onClickPurchasedLine.bind(this), onClickPurchasedPoint: this.onClickPurchasedPoint.bind(this), sendMessage: this.props.conn.sendMessage, hasGameStarted: this.state.gameStarted }),
             React.createElement(statusBar_1.PlayerList, { names: this.state.playerList, currentPlayer: (this.state.currentTurn) ? this.state.currentTurn.currentPlayer.getName() : null }),
             React.createElement(canvas_1.Canvas, { gm: this.state.gm, onClick: this.mouseHandler.bind(this), mayPlaceRoad: this.state.selectedLinePurchased != null, mayPlaceSettlement: this.state.selectedPointPurchased != null })));
     }
@@ -1676,23 +1676,12 @@ exports.Game = Game;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.InventoryDisplay = void 0;
 const React = __webpack_require__(/*! react */ "react");
-// interface IState {
-//     selectedLinePurchased: number | null,
-//     selectedPointPurchased: number | null,
-// }
-// export class InventoryDisplay extends React.Component<IProps, IState> {
-//     constructor(props: IProps) {
-//         super(props);
-//         this.state = {
-//             selectedLinePurchased: null,
-//             selectedPointPurchased: null
-//         }
-//     }
-//     render() {
+const purchaseMenu_1 = __webpack_require__(/*! ../purchaseMenu */ "./src/components/purchaseMenu.tsx");
 function InventoryDisplay(props) {
-    if (!props.inv) {
+    if (!props.inv || !props.hasGameStarted) {
         return React.createElement("div", { className: "window inventory" }, "Inventory");
     }
+    const [isPurchaseMenuShown, setPurchaseMenuVisibility] = React.useState(false);
     const tmp = [];
     for (const resourceName of props.inv.keys()) {
         if (resourceName == 'NoResource') {
@@ -1702,7 +1691,9 @@ function InventoryDisplay(props) {
     }
     const anyPurchased = props.inv.getLineFeatures().length > 0 || props.inv.getPointFeatures().length > 0;
     return (React.createElement("div", null,
-        React.createElement("div", { className: "window inventory" }, tmp.join('; ')),
+        React.createElement("div", { className: "window inventory" },
+            React.createElement("button", { onClick: () => setPurchaseMenuVisibility(true), className: "button" }, "Purchase Menu"),
+            React.createElement("span", null, tmp.join('; '))),
         anyPurchased ? React.createElement("div", { className: "window inventory2" },
             React.createElement("h3", null, "Purchased:"),
             React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', marginBottom: '0.5em' } }, props.inv.getPointFeatures().map((value, index) => {
@@ -1711,7 +1702,8 @@ function InventoryDisplay(props) {
             React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap' } }, props.inv.getLineFeatures().map((value, index) => {
                 return (React.createElement("button", { key: index, onClick: (ev) => props.onClickPurchasedLine(index, ev) },
                     React.createElement("i", { className: "fas fa-road" })));
-            }))) : null));
+            }))) : null,
+        isPurchaseMenuShown ? React.createElement(purchaseMenu_1.PurchaseMenu, { cancelFunc: () => setPurchaseMenuVisibility(false), sendMessage: props.sendMessage }) : null));
 }
 exports.InventoryDisplay = InventoryDisplay;
 
@@ -1795,11 +1787,31 @@ const colorBox_1 = __webpack_require__(/*! ./colorBox */ "./src/components/color
 class LoginForm extends React.Component {
     constructor(props) {
         super(props);
+        let name = '';
+        let host = '';
+        let port = '';
+        let color = '';
+        const oldData = localStorage.getItem('login');
+        if (oldData) {
+            const oldState = JSON.parse(oldData);
+            if (oldState['name']) {
+                name = oldState['name'];
+            }
+            if (oldState['host']) {
+                host = oldState['host'];
+            }
+            if (oldState['port']) {
+                port = oldState['port'];
+            }
+            if (oldState['color']) {
+                color = oldState['color'];
+            }
+        }
         this.state = {
-            name: '',
-            host: '',
-            port: '',
-            color: '',
+            name: name,
+            host: host,
+            port: port,
+            color: color,
             pickingColor: false
         };
         this.handleChange = this.handleChange.bind(this);
@@ -1826,6 +1838,7 @@ class LoginForm extends React.Component {
         const port = parseInt(this.state.port);
         if (this.state.name != '' && this.state.host != '' && port.toString() != "NaN" && port > 0 && this.state.color != '') {
             console.log("yeet", this.state);
+            localStorage.setItem('login', JSON.stringify(this.state));
             this.props.callback({
                 name: this.state.name,
                 host: this.state.host,
@@ -1848,6 +1861,45 @@ class LoginForm extends React.Component {
     }
 }
 exports.LoginForm = LoginForm;
+
+
+/***/ }),
+
+/***/ "./src/components/purchaseMenu.tsx":
+/*!*****************************************!*\
+  !*** ./src/components/purchaseMenu.tsx ***!
+  \*****************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PurchaseMenu = void 0;
+const React = __webpack_require__(/*! react */ "react");
+;
+function PurchaseMenu(props) {
+    const [hasBoughtStuff, setHasBoughtStuff] = React.useState(false);
+    function purchase(content) {
+        props.sendMessage("purchase", content);
+        setHasBoughtStuff(true);
+    }
+    return (React.createElement("div", { className: "window purchaseMenu center" },
+        React.createElement("h3", null, "Purchase Menu"),
+        React.createElement("table", null,
+            React.createElement("tbody", null,
+                React.createElement("tr", { onClick: () => purchase('road') },
+                    React.createElement("td", null, "Road"),
+                    React.createElement("td", null, "Lumber:\u00A01, Brick:\u00A01")),
+                React.createElement("tr", { onClick: () => purchase('settlement') },
+                    React.createElement("td", null, "Settlement"),
+                    React.createElement("td", null, "Wheat:\u00A01, Sheepie:\u00A01, Lumber:\u00A01, Brick:\u00A01")),
+                React.createElement("tr", { onClick: () => purchase('city') },
+                    React.createElement("td", null, "City"),
+                    React.createElement("td", null, "Wheat:\u00A02, Ore:\u00A03")))),
+        React.createElement("button", { className: "button", onClick: props.cancelFunc }, hasBoughtStuff ? "Done" : "Cancel")));
+}
+exports.PurchaseMenu = PurchaseMenu;
 
 
 /***/ }),
@@ -2005,6 +2057,7 @@ class Connection {
         this.verifiedConnection = false;
         this.jsonMessageHandler = (a) => { throw Error("jsonMessageHandler not set"); };
         this.ws = null;
+        this.sendMessage = this.sendMessage.bind(this);
         this.connect();
     }
     /**
@@ -2119,10 +2172,10 @@ class Connection {
         this.jsonMessageHandler = f;
     }
     /**
- * The function handles the JSON.stringify
- *
- * @param o An object to send.
- */
+     * The function handles the JSON.stringify
+     *
+     * @param o An object to send.
+     */
     send(o) {
         const msg = JSON.stringify(o);
         if (this.ws) {
@@ -2132,6 +2185,13 @@ class Connection {
             console.log('Disconnected');
         }
     }
+    /**
+     * For sending a message to the server
+     *
+     * @param type
+     * @param content
+     * @param args
+     */
     sendMessage(type, content, args) {
         this.send(jsonParser_1.JsonMessage(type, content, args));
     }
@@ -2205,7 +2265,7 @@ ReactDOM.render(React.createElement(ui_1.UI, null), document.getElementById("roo
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.JsonParser = exports.JsonParserError = exports.JsonMessage = void 0;
 function JsonMessage(type, content, args) {
-    if (args.length > 0) {
+    if (args && args.length > 0) {
         return { "type": type, "content": content, "args": args };
     }
     else {
