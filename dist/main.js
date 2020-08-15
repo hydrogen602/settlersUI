@@ -916,12 +916,12 @@ const jsonParser_1 = __webpack_require__(/*! ../../../jsonParser */ "./src/jsonP
 // import { Settlement } from "./Settlement";
 // import { Config } from "../Config";
 class Tile {
-    constructor(location, landType, diceValue) {
+    constructor(location, landType, diceValue, isDisabledByRobber) {
         this.active = false; // whether this round's die roll matches this tile
-        this.isDisabledByRobber = false;
         this.diceValue = diceValue;
         this.landType = landType;
         this.p = location;
+        this.isDisabledByRobber = isDisabledByRobber;
         this.center = Point_1.Hex.getCenterOfHex(location.y, location.x); // flip on purpose
         util_1.defined(this.diceValue);
         util_1.defined(this.landType);
@@ -933,7 +933,8 @@ class Tile {
         const diceValue = jsonParser_1.JsonParser.requireNumber(data, 'diceValue');
         const location = Point_1.HexPoint.fromJson(jsonParser_1.JsonParser.requireObject(data, 'location'));
         const biome = Biome_1.getBiomeByName(jsonParser_1.JsonParser.requireString(data, 'biome'));
-        return new Tile(location, biome, diceValue);
+        const isDisabledByRobber = jsonParser_1.JsonParser.requireBool(data, 'isDisabledByRobber');
+        return new Tile(location, biome, diceValue, isDisabledByRobber);
     }
     // getDiceValue() {
     //     return this.diceValue;
@@ -941,9 +942,9 @@ class Tile {
     // getLandType() {
     //     return this.landType;
     // }
-    // getPos() {
-    //     return this.p;
-    // }
+    getPos() {
+        return this.p;
+    }
     // // activate if die matches this tile. Also does production
     // activateIfDiceValueMatches(value: number, settlements: Array<Settlement>) {
     //     assertInt(value);
@@ -970,10 +971,13 @@ class Tile {
     }
     highlightIfActive(ctx) {
         if (this.active && !this.isDisabledByRobber) {
-            ctx.strokeStyle = "white";
-            ctx.lineWidth = 4;
-            Point_1.Hex.strokeHex(this.p.y, this.p.x, ctx);
+            this.highlight(ctx);
         }
+    }
+    highlight(ctx) {
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 4;
+        Point_1.Hex.strokeHex(this.p.y, this.p.x, ctx);
     }
     // arriveRobber() {
     //     this.isDisabledByRobber = true;
@@ -1012,7 +1016,7 @@ class Tile {
         const relCenter = this.center.toRelPoint();
         const apo = Point_1.Hex.getSideLength() / 3.5 + 2;
         const xStep = 0.5773502691896257 * apo; // Math.tan(Math.PI / 6) * apo;
-        ctx.strokeStyle = "red";
+        ctx.strokeStyle = "black";
         ctx.lineWidth = 5;
         ctx.beginPath();
         ctx.moveTo(relCenter.x + xStep, relCenter.y - apo);
@@ -1021,6 +1025,16 @@ class Tile {
         ctx.lineTo(relCenter.x - xStep, relCenter.y + apo);
         ctx.lineTo(relCenter.x - 2 * xStep, relCenter.y);
         ctx.lineTo(relCenter.x - xStep, relCenter.y - apo);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(relCenter.x + xStep, relCenter.y - apo);
+        ctx.lineTo(relCenter.x - xStep, relCenter.y + apo);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.lineTo(relCenter.x - xStep, relCenter.y - apo);
+        ctx.lineTo(relCenter.x + xStep, relCenter.y + apo);
         ctx.closePath();
         ctx.stroke();
     }
@@ -1548,6 +1562,7 @@ class Game extends React.Component {
             inventory: null,
             selectedLinePurchased: null,
             selectedPointPurchased: null,
+            mayPlaceRobber: false,
         };
     }
     onMessage(obj) {
@@ -1610,6 +1625,7 @@ class Game extends React.Component {
     mouseHandler(e) {
         const p = new Point_1.RelPoint(e.clientX, e.clientY);
         const r = Point_1.Hex.distanceFromNearestHexCorner(p);
+        const a = p.toAbsPoint();
         if (this.state.selectedPointPurchased != null) {
             if (r < Point_1.Hex.getSideLength() / 4) {
                 // clicked on a corner
@@ -1630,6 +1646,20 @@ class Game extends React.Component {
                 this.setState({
                     selectedLinePurchased: null
                 });
+            }
+        }
+        else if (this.state.mayPlaceRobber) {
+            for (const ti of this.state.gm.getTiles()) {
+                if (ti.isInside(a)) {
+                    // robber movement time
+                    console.log("move robber");
+                    const hp = ti.getPos();
+                    this.props.conn.send({ 'type': 'action', 'content': 'placeRobber', 'args': [hp.toJsonSerializable()] });
+                    this.setState({
+                        mayPlaceRobber: false
+                    });
+                    break;
+                }
             }
         }
     }
@@ -1807,12 +1837,14 @@ class LoginForm extends React.Component {
                 color = oldState['color'];
             }
         }
+        const onAWS = "https://game.jonathanrotter.com/" == document.URL;
         this.state = {
             name: name,
-            host: host,
-            port: port,
+            host: (onAWS) ? "game.jonathanrotter.com" : host,
+            port: (onAWS) ? "5000" : port,
             color: color,
-            pickingColor: false
+            pickingColor: false,
+            onAWS: onAWS
         };
         this.handleChange = this.handleChange.bind(this);
         this.handleSubmit = this.handleSubmit.bind(this);
@@ -1853,8 +1885,8 @@ class LoginForm extends React.Component {
         return (React.createElement("div", null,
             React.createElement("form", { id: "loginForm", className: "center window", onSubmit: this.handleSubmit },
                 React.createElement("input", { required: true, name: "name", type: "text", placeholder: "Name", value: this.state.name, onChange: this.handleChange }),
-                React.createElement("input", { required: true, name: "host", type: "text", placeholder: "Hostname", value: this.state.host, onChange: this.handleChange }),
-                React.createElement("input", { required: true, name: "port", type: "number", placeholder: "Port", value: this.state.port, onChange: this.handleChange }),
+                (this.state.onAWS) ? null : React.createElement("input", { required: true, name: "host", type: "text", placeholder: "Hostname", value: this.state.host, onChange: this.handleChange }),
+                (this.state.onAWS) ? null : React.createElement("input", { required: true, name: "port", type: "number", placeholder: "Port", value: this.state.port, onChange: this.handleChange }),
                 React.createElement("input", { required: true, readOnly: true, name: "color", type: "string", placeholder: "Color", value: this.state.color, onFocus: () => { this.setState({ pickingColor: true }); } }),
                 React.createElement("button", { className: "button" }, "Join Game")),
             (this.state.pickingColor) ? React.createElement(colorBox_1.ColorBox, { onClick: this.onColorClick.bind(this) }) : null));
@@ -2082,10 +2114,10 @@ class Connection {
     }
     getUrl() {
         if (this.data.token != null) {
-            return `ws://${this.data.host}:${this.data.port}/${this.data.name}/${this.data.token}/${this.data.color}`;
+            return `wss://${this.data.host}:${this.data.port}/${this.data.name}/${this.data.token}/${this.data.color}`;
         }
         else {
-            return `ws://${this.data.host}:${this.data.port}/${this.data.name}/${this.data.color}`;
+            return `wss://${this.data.host}:${this.data.port}/${this.data.name}/${this.data.color}`;
         }
     }
     connect() {
