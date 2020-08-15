@@ -2114,10 +2114,10 @@ class Connection {
     }
     getUrl() {
         if (this.data.token != null) {
-            return `ws://${this.data.host}:${this.data.port}/${this.data.name}/${this.data.token}/${this.data.color}`;
+            return `wss://${this.data.host}:${this.data.port}/${this.data.name}/${this.data.token}/${this.data.color}`;
         }
         else {
-            return `ws://${this.data.host}:${this.data.port}/${this.data.name}/${this.data.color}`;
+            return `wss://${this.data.host}:${this.data.port}/${this.data.name}/${this.data.color}`;
         }
     }
     connect() {
